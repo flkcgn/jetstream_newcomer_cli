@@ -1,33 +1,54 @@
+// Jetstream client for consuming Bluesky firehose events.
+
 import { Jetstream } from '@skyware/jetstream';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { ProfileCache } from './profileCache.js';
+import { defaultEvaluationConfig } from './filters.js';
+import { evaluateCandidatePost, createRejectedEvaluation } from './evaluate.js';
 import {
-  isNewAccount,
-  isHumanAccount,
-  isBridgeAccount,
-} from './filters.js';
+  formatAcceptedPost,
+  formatRejectedPost,
+  formatStartupMessage,
+  formatConnectedMessage,
+  formatReconnectMessage,
+  type OutputOptions,
+} from './output.js';
 
 import type {
   JetstreamEvent,
   AppBskyFeedPostCommitEvent,
-  ProfileView,
+  EvaluationConfig,
 } from './type.js';
 
-// Options for configuring the Jetstream client. Intentionally minimal.
+// ---------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------
+
 export interface JetstreamClientOptions {
+  // Jetstream configuration.
   wantedCollections?: string[];
   reconnectDelayMs?: number;
   profileCacheTtlMs?: number;
+
+  // Evaluation configuration.
+  evaluationConfig?: Partial<EvaluationConfig>;
+
+  // Output configuration.
+  debug?: boolean;
+  includeRejected?: boolean;
+  useColors?: boolean;
 }
+
+// ---------------------------------------------------------
+// Event type guards
+// ---------------------------------------------------------
 
 /**
  * Narrow a generic JetstreamEvent to an AppBskyFeedPostCommitEvent.
- *
- * Checks that the event is a commit for app.bsky.feed.post
- * and that the record contains a text field.
+ * Only accepts new post creations with valid text.
  */
-function isPostCommitEvent(
+function isPostCreateEvent(
   event: JetstreamEvent,
 ): event is AppBskyFeedPostCommitEvent {
   if (event.kind !== 'commit') return false;
@@ -37,54 +58,18 @@ function isPostCommitEvent(
   return (
     !!commit &&
     commit.collection === 'app.bsky.feed.post' &&
+    commit.operation === 'create' &&
     !!commit.record &&
     typeof commit.record.text === 'string'
   );
 }
 
-/**
- * Pretty-print a single post event plus profile data to stdout.
- */
-function logPostWithProfile(
-  event: AppBskyFeedPostCommitEvent,
-  profile: ProfileView,
-): void {
-  const { did, time_us, commit } = event;
-  const oneLine = commit.record.text.replace(/\s+/g, ' ').trim();
-  const text = oneLine.length > 200 ? `${oneLine.slice(0, 200)}…` : oneLine;
-
-  console.log('========================================');
-  console.log('Newcomer post candidate:');
-  console.log(` DID: ${did}`);
-  console.log(` Handle: ${profile.handle}`);
-  console.log(` DisplayName: ${profile.displayName ?? '(no display name)'}`);
-  console.log(` PostsCount: ${profile.postsCount ?? 'unknown'}`);
-  console.log(` Text: ${text}`);
-  console.log(` Cursor: ${time_us}`);
-}
+// ---------------------------------------------------------
+// Main listener
+// ---------------------------------------------------------
 
 /**
- * Pretty-print a single post event without profile data.
- * Used only as a fallback when AppView profile lookup fails.
- */
-function logPostWithoutProfile(event: AppBskyFeedPostCommitEvent): void {
-  const { did, time_us, commit } = event;
-  const oneLine = commit.record.text.replace(/\s+/g, ' ').trim();
-  const text = oneLine.length > 200 ? `${oneLine.slice(0, 200)}…` : oneLine;
-
-  console.log('========================================');
-  console.log('Post received (no profile available):');
-  console.log(` DID: ${did}`);
-  console.log(' Handle: (unavailable)');
-  console.log(' DisplayName: (unavailable)');
-  console.log(' PostsCount: unknown');
-  console.log(` Text: ${text}`);
-  console.log(` Cursor: ${time_us}`);
-}
-
-/**
- * Start a Jetstream subscription that logs (filtered) new posts to the terminal
- * and enriches them with profile data from AppView.
+ * Start a Jetstream subscription that filters and outputs newcomer posts.
  */
 export async function startJetstreamPostListener(
   options: JetstreamClientOptions = {},
@@ -93,16 +78,52 @@ export async function startJetstreamPostListener(
     wantedCollections = ['app.bsky.feed.post'],
     reconnectDelayMs = 5000,
     profileCacheTtlMs = 5 * 60 * 1000,
+    evaluationConfig: evalConfigOverrides = {},
+    debug = false,
+    includeRejected = false,
+    useColors = true,
   } = options;
 
+  // Merge evaluation config with defaults.
+  const evaluationConfig: EvaluationConfig = {
+    ...defaultEvaluationConfig,
+    ...evalConfigOverrides,
+  };
+
+  // Output options.
+  const outputOptions: OutputOptions = {
+    debug,
+    useColors,
+  };
+
+  // Create profile cache.
   const profileCache = new ProfileCache({
     ttlMs: profileCacheTtlMs,
   });
 
+  // Print startup message.
+  console.log(formatStartupMessage(
+    evaluationConfig.targetDomain,
+    evaluationConfig.maxAccountAgeDays,
+    outputOptions,
+  ));
+
+  // Reconnection loop.
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const jetstream = new Jetstream({
       wantedCollections,
+    });
+
+    // Create a promise that resolves when the connection closes.
+    const connectionClosed = new Promise<void>((resolve) => {
+      jetstream.on('close', () => {
+        resolve();
+      });
+    });
+
+    jetstream.on('open', () => {
+      console.log(formatConnectedMessage(outputOptions));
     });
 
     jetstream.on('error', (error) => {
@@ -112,56 +133,75 @@ export async function startJetstreamPostListener(
     jetstream.on('commit', (rawEvent: unknown) => {
       const event = rawEvent as JetstreamEvent;
 
-      if (!isPostCommitEvent(event)) return;
+      if (!isPostCreateEvent(event)) return;
 
-      void handlePostEvent(event, profileCache);
+      void handlePostEvent(
+        event,
+        profileCache,
+        evaluationConfig,
+        outputOptions,
+        includeRejected,
+      );
     });
 
-    console.log('Connecting to Bluesky Jetstream (app.bsky.feed.post)...');
-
     try {
-      await jetstream.start();
-      console.warn(
-        `Jetstream connection ended. Reconnecting in ${reconnectDelayMs} ms...`,
-      );
+      // start() is synchronous - it initiates the connection but doesn't wait.
+      jetstream.start();
+
+      // Wait for the connection to close before reconnecting.
+      await connectionClosed;
     } catch (error) {
-      console.error(
-        `Failed to start Jetstream client. Reconnecting in ${reconnectDelayMs} ms...`,
-        error,
-      );
+      console.error('Jetstream error:', error);
     }
 
+    console.log(formatReconnectMessage(reconnectDelayMs, outputOptions));
     await sleep(reconnectDelayMs);
   }
 }
 
+// ---------------------------------------------------------
+// Event handler
+// ---------------------------------------------------------
+
 /**
- * Handle a single post event and enrich it with profile data.
- * Applies best-effort newcomer / human / bridge filters.
+ * Handle a single post event: fetch profile, evaluate, and output.
  */
 async function handlePostEvent(
   event: AppBskyFeedPostCommitEvent,
   profileCache: ProfileCache,
+  config: EvaluationConfig,
+  outputOptions: OutputOptions,
+  includeRejected: boolean,
 ): Promise<void> {
+  const { did, time_us, commit } = event;
+  const post = commit.record;
+
   try {
-    const profile = await profileCache.getProfile(event.did);
+    // Fetch profile.
+    const profile = await profileCache.getProfile(did);
 
-    const isNew = isNewAccount(profile);
-    const isHuman = isHumanAccount(profile);
-    const bridge = isBridgeAccount(profile);
+    // Evaluate the post.
+    const evaluation = evaluateCandidatePost(post, profile, config);
 
-    // Best-effort filters:
-    // - must be "new"
-    // - must look "human"
-    // - must not look like an obvious bridge account
-    if (!isNew || !isHuman || bridge) {
-      return;
+    // Output based on result.
+    if (evaluation.accepted) {
+      console.log(formatAcceptedPost(post, profile, evaluation, time_us, outputOptions));
+    } else if (includeRejected) {
+      console.log(formatRejectedPost(post, profile, evaluation, time_us, outputOptions));
+    }
+    // If rejected and not includeRejected, silently skip.
+
+  } catch (error) {
+    // Profile fetch failed - create rejection evaluation.
+    if (outputOptions.debug) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Profile fetch failed for ${did}: ${errorMsg}`);
     }
 
-    logPostWithProfile(event, profile);
-  } catch (error) {
-    console.error(`Failed to load profile for DID "${event.did}":`, error);
-    // Fallback: still show the post without profile so issues are visible.
-    logPostWithoutProfile(event);
+    if (includeRejected) {
+      const rejection = createRejectedEvaluation(`Profile fetch failed: ${did}`);
+      const dummyProfile = { did, handle: 'unknown' };
+      console.log(formatRejectedPost(post, dummyProfile, rejection, time_us, outputOptions));
+    }
   }
 }
