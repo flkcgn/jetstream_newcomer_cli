@@ -1,0 +1,40 @@
+{
+  "name": "jetstream-newcomer-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "jetstream-newcomer": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "description": "A simple CLI tool to consume the Bluesky / AT Protocol **Jetstream** feed and analyze **new accounts** on Bluesky.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flkcgn/jetstream_newcomer_cli.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/flkcgn/jetstream_newcomer_cli/issues"
+  },
+  "homepage": "https://github.com/flkcgn/jetstream_newcomer_cli#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.5.2",
+    "eslint": "^10.2.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.0"
+  },
+  "dependencies": {
+    "@skyware/jetstream": "^0.2.5"
+  }
+}
