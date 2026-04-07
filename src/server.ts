@@ -54,11 +54,11 @@ async function main(): Promise<void> {
   // - Replies: excluded
   const evaluationConfig = {
     ...defaultEvaluationConfig,
-    allowedLanguages: ['en', 'de', 'fr', 'es', 'it', 'nl'],
+    allowedLanguages: ['en', 'de', 'fr', 'es', 'it', 'bnl'],
     requireLanguageTag: false,
     includeReplies: false,
     includeQuotePosts: true,
-    minQuoteCommentaryChars: 10,
+    minQuoteCommentaryChars: 15,
   };
 
   // Start Jetstream consumer with database callbacks.

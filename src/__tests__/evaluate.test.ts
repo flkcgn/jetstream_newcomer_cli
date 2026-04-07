@@ -181,6 +181,129 @@ describe('Hard blocker precedence', () => {
 });
 
 // ---------------------------------------------------------
+// Blocklist / Allowlist tests
+// ---------------------------------------------------------
+
+describe('Blocklist', () => {
+  const now = new Date();
+
+  it('should reject blocklisted DID', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      blockDids: ['did:plc:test123'],
+    };
+    const profile = createProfile();
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, false);
+    assert.ok(result.hardBlockers.some(b => b.includes('blocklisted')));
+  });
+
+  it('should reject blocklisted handle', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      blockHandles: ['alice.eurosky.social'],
+    };
+    const profile = createProfile();
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, false);
+    assert.ok(result.hardBlockers.some(b => b.includes('blocklisted')));
+  });
+
+  it('should be case-insensitive for blocklist', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      blockHandles: ['ALICE.EUROSKY.SOCIAL'],
+    };
+    const profile = createProfile();
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, false);
+  });
+
+  it('should not reject non-blocklisted account', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      blockDids: ['did:plc:other'],
+    };
+    const profile = createProfile();
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, true);
+  });
+});
+
+describe('Allowlist', () => {
+  const now = new Date();
+
+  it('should accept allowlisted DID even if normally rejected', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowDids: ['did:plc:test123'],
+    };
+    const profile = createProfile({
+      handle: 'alice.bsky.social', // would normally be rejected (wrong domain)
+      createdAt: daysAgo(30),      // would normally be rejected (too old)
+    });
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, true);
+    assert.ok(result.reasonsAccepted.some(r => r.includes('allowlisted')));
+  });
+
+  it('should accept allowlisted handle', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowHandles: ['alice.bsky.social'],
+    };
+    const profile = createProfile({ handle: 'alice.bsky.social' });
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, true);
+    assert.ok(result.reasonsAccepted.some(r => r.includes('allowlisted')));
+  });
+
+  it('should still compute stage results for allowlisted account', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowDids: ['did:plc:test123'],
+    };
+    const profile = createProfile();
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, true);
+    assert.ok(result.stageResults.language);
+    assert.ok(result.stageResults.membership);
+    assert.ok(result.stageResults.newcomer);
+    assert.ok(result.stageResults.human);
+    assert.ok(result.stageResults.engagement);
+    assert.ok(result.stageResults.spam);
+    assert.ok(result.stageResults.safety);
+  });
+
+  it('should prioritize blocklist over allowlist', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowDids: ['did:plc:test123'],
+      blockDids: ['did:plc:test123'],
+    };
+    const profile = createProfile();
+    const post = createPost();
+    const result = evaluateCandidatePost(post, profile, config, now);
+
+    assert.strictEqual(result.accepted, false);
+  });
+});
+
+// ---------------------------------------------------------
 // createRejectedEvaluation tests
 // ---------------------------------------------------------
 

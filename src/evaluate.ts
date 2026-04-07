@@ -46,6 +46,21 @@ export function evaluateCandidatePost(
   config: EvaluationConfig = defaultEvaluationConfig,
   now: Date = new Date(),
 ): CandidateEvaluation {
+  // ---------------------------------------------------------
+  // Pre-stage: Manual moderation (blocklist / allowlist)
+  // ---------------------------------------------------------
+
+  if (isBlocklisted(profile, config)) {
+    return createRejectedEvaluation(
+      `Account is blocklisted (${profile.handle} / ${profile.did})`,
+      profile,
+    );
+  }
+
+  if (isAllowlisted(profile, config)) {
+    return createAllowlistedEvaluation(post, profile, config, now);
+  }
+
   const hardBlockers: string[] = [];
   const reasonsAccepted: string[] = [];
   const reasonsRejected: string[] = [];
@@ -254,6 +269,69 @@ function calculateScore(
     weights.profile * profileCompleteness;
 
   return Math.max(0, Math.min(1, score));
+}
+
+/**
+ * Check if an account is on the blocklist (by DID or handle).
+ */
+function isBlocklisted(profile: ProfileView, config: EvaluationConfig): boolean {
+  if (config.blockDids.length > 0) {
+    const did = profile.did.toLowerCase();
+    if (config.blockDids.some(d => d.toLowerCase() === did)) return true;
+  }
+  if (config.blockHandles.length > 0) {
+    const handle = profile.handle.toLowerCase();
+    if (config.blockHandles.some(h => h.toLowerCase() === handle)) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if an account is on the allowlist (by DID or handle).
+ */
+function isAllowlisted(profile: ProfileView, config: EvaluationConfig): boolean {
+  if (config.allowDids.length > 0) {
+    const did = profile.did.toLowerCase();
+    if (config.allowDids.some(d => d.toLowerCase() === did)) return true;
+  }
+  if (config.allowHandles.length > 0) {
+    const handle = profile.handle.toLowerCase();
+    if (config.allowHandles.some(h => h.toLowerCase() === handle)) return true;
+  }
+  return false;
+}
+
+/**
+ * Create an accepted evaluation for allowlisted accounts.
+ * Still runs content filters for scoring, but forces acceptance.
+ */
+function createAllowlistedEvaluation(
+  post: AppBskyFeedPostRecord,
+  profile: ProfileView,
+  config: EvaluationConfig,
+  now: Date,
+): CandidateEvaluation {
+  const language = evaluateLanguage(post, config);
+  const membership = isEuroskyAccount(profile, config);
+  const newcomer = isNewOnEurosky(profile, config, now);
+  const human = evaluateHumanLikelihood(profile, config);
+  const engagement = evaluateEngagement(post, config);
+  const spam = evaluateSpamLikelihood(post, config);
+  const safety = evaluateSafety(post, config);
+
+  const score = calculateScore(
+    human.score, spam.score, safety.score, engagement.score, human.signals.profileCompleteness,
+  );
+
+  return {
+    accepted: true,
+    confidence: 'high',
+    score,
+    reasonsAccepted: [`Account is allowlisted (${profile.handle} / ${profile.did})`],
+    reasonsRejected: [],
+    hardBlockers: [],
+    stageResults: { language, membership, newcomer, human, engagement, spam, safety },
+  };
 }
 
 /**

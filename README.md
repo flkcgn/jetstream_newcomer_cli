@@ -157,6 +157,23 @@ src/
 └── unpublishFeed.ts   # Feed unregistration script
 ```
 
+## Manual Moderation
+
+The evaluation pipeline supports allowlists and blocklists by DID and handle.
+These can be configured in the `EvaluationConfig`:
+
+```typescript
+{
+  allowDids: ['did:plc:trusted-user'],
+  allowHandles: ['friend.eurosky.social'],
+  blockDids: ['did:plc:known-spammer'],
+  blockHandles: ['spammer.eurosky.social'],
+}
+```
+
+- **Allowlisted** accounts bypass all filters and are always accepted.
+- **Blocklisted** accounts are immediately rejected before any evaluation.
+
 ## Hosting
 
 The feed generator is designed to be hosted on a VM with a public hostname. Requirements:

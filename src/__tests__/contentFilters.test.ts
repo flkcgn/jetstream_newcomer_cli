@@ -303,6 +303,45 @@ describe('evaluateLanguage', () => {
     assert.strictEqual(result.isAllowed, false);
     assert.ok(result.reasons.some(r => r.includes('no language tags')));
   });
+
+  it('should normalize bnl to nl (BNL/NL compatibility)', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['bnl'],
+    };
+    const post = createPost({ langs: ['nl'] });
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.deepStrictEqual(result.signals.normalizedLanguages, ['nl']);
+  });
+
+  it('should match post tagged bnl against allowed nl', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['nl'],
+    };
+    const post = createPost({ langs: ['bnl'] });
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.deepStrictEqual(result.signals.normalizedLanguages, ['nl']);
+  });
+
+  it('should use default allowed languages from config', () => {
+    const post = createPost({ langs: ['de'] });
+    const result = evaluateLanguage(post, defaultEvaluationConfig);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.ok(result.signals.matchedLanguages.includes('de'));
+  });
+
+  it('should reject disallowed language with default config', () => {
+    const post = createPost({ langs: ['ja'] });
+    const result = evaluateLanguage(post, defaultEvaluationConfig);
+
+    assert.strictEqual(result.isAllowed, false);
+  });
 });
 
 // ---------------------------------------------------------

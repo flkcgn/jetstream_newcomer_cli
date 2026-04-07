@@ -1,0 +1,29 @@
+[Unit]
+Description=Eurosky Newcomer CLI – Bluesky Jetstream listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+
+# Run via Docker (recommended)
+ExecStart=/usr/bin/docker run --rm --name jetstream-newcomer \
+  jetstream-newcomer:latest \
+  --host eurosky.social \
+  --max-age-days 7
+
+# Alternative: run directly with Node.js (uncomment and adjust path)
+# ExecStart=/usr/bin/node /opt/jetstream-newcomer/dist/index.js --host eurosky.social --max-age-days 7
+# WorkingDirectory=/opt/jetstream-newcomer
+# User=jetstream
+
+ExecStop=/usr/bin/docker stop jetstream-newcomer
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jetstream-newcomer
+
+[Install]
+WantedBy=multi-user.target

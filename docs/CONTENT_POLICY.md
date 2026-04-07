@@ -10,7 +10,7 @@ This document describes what content is included or excluded from the "Welcome N
 ## Excluded
 
 - **Replies** — the feed focuses on standalone posts to highlight newcomers
-- **Quote posts without commentary** — reposting without adding context is not considered engagement
+- **Quote posts without sufficient commentary** — reposting without adding at least 15 characters of context is not considered engagement
 - **Posts in unsupported languages** — only `en`, `de`, `fr`, `es`, `it`, `nl` are accepted
 - **Posts from non-eurosky accounts** — handle must end in `.eurosky.social`
 - **Posts from established accounts** — only accounts ≤ 7 days old qualify as newcomers
