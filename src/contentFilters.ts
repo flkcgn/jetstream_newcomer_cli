@@ -5,6 +5,8 @@ import type {
   AppBskyFeedPostRecord,
   SpamResult,
   SafetyResult,
+  LanguageResult,
+  EngagementResult,
   EvaluationConfig,
   Facet,
 } from './type.js';
@@ -217,8 +219,202 @@ export function isQuotePost(post: AppBskyFeedPostRecord): boolean {
 }
 
 // ---------------------------------------------------------
+// Language evaluation
+// ---------------------------------------------------------
+
+/**
+ * Evaluate whether the post's declared languages are acceptable.
+ *
+ * If allowedLanguages is empty, all languages are accepted.
+ * Normalizes language tags to their base form (e.g. "de-DE" -> "de")
+ * so that regional variants are not penalized.
+ */
+export function evaluateLanguage(
+  post: AppBskyFeedPostRecord,
+  config: EvaluationConfig = defaultEvaluationConfig,
+): LanguageResult {
+  const reasons: string[] = [];
+  const postLanguages = post.langs ?? [];
+  const normalizedLanguages = postLanguages.map(normalizeLanguageTag);
+
+  // If no language restrictions are configured, everything is allowed.
+  if (config.allowedLanguages.length === 0) {
+    return {
+      isAllowed: true,
+      reasons: ['No language restrictions configured'],
+      signals: {
+        postLanguages,
+        normalizedLanguages,
+        matchedLanguages: normalizedLanguages,
+      },
+    };
+  }
+
+  // If the post has no language tags, check whether they are required.
+  if (postLanguages.length === 0) {
+    if (config.requireLanguageTag) {
+      return {
+        isAllowed: false,
+        reasons: ['Post has no language tags and language tags are required'],
+        signals: {
+          postLanguages: [],
+          normalizedLanguages: [],
+          matchedLanguages: [],
+        },
+      };
+    }
+
+    return {
+      isAllowed: true,
+      reasons: ['Post has no language tags; language tags not required'],
+      signals: {
+        postLanguages: [],
+        normalizedLanguages: [],
+        matchedLanguages: [],
+      },
+    };
+  }
+
+  const allowedSet = new Set(config.allowedLanguages.map(l => l.toLowerCase()));
+  const matchedLanguages = normalizedLanguages.filter(l => allowedSet.has(l));
+
+  const isAllowed = matchedLanguages.length > 0;
+
+  if (isAllowed) {
+    reasons.push(`Matched languages: ${matchedLanguages.join(', ')}`);
+  } else {
+    reasons.push(
+      `Post languages [${normalizedLanguages.join(', ')}] do not match allowed [${config.allowedLanguages.join(', ')}]`,
+    );
+  }
+
+  return {
+    isAllowed,
+    reasons,
+    signals: {
+      postLanguages,
+      normalizedLanguages,
+      matchedLanguages,
+    },
+  };
+}
+
+// ---------------------------------------------------------
+// Engagement / post quality evaluation
+// ---------------------------------------------------------
+
+/**
+ * Evaluate whether a post is substantial enough for the feed.
+ *
+ * Checks for:
+ * - Minimum character length of meaningful text
+ * - Minimum word count
+ * - Low-effort patterns (single emoji, "lol", etc.)
+ * - Quote posts with too little commentary
+ */
+export function evaluateEngagement(
+  post: AppBskyFeedPostRecord,
+  config: EvaluationConfig = defaultEvaluationConfig,
+): EngagementResult {
+  const reasons: string[] = [];
+  const lowEffortMatches: string[] = [];
+  let score = 1.0;
+
+  const text = post.text.trim();
+  const meaningfulChars = countMeaningfulChars(text);
+  const wordCount = countWords(text);
+  const quotePost = isQuotePost(post);
+
+  // Check minimum meaningful character count.
+  if (meaningfulChars < config.minMeaningfulTextChars) {
+    const deficit = 1 - meaningfulChars / config.minMeaningfulTextChars;
+    score -= 0.3 + 0.4 * deficit;
+    reasons.push(
+      `Too few meaningful characters: ${meaningfulChars} (min: ${config.minMeaningfulTextChars})`,
+    );
+  }
+
+  // Check minimum word count.
+  if (wordCount < config.minWordCount) {
+    score -= 0.4;
+    reasons.push(`Too few words: ${wordCount} (min: ${config.minWordCount})`);
+  }
+
+  // Check for low-effort patterns.
+  const normalizedText = text.toLowerCase().trim();
+  for (const pattern of config.lowEffortPatterns) {
+    try {
+      const regex = new RegExp(pattern, 'i');
+      if (regex.test(normalizedText)) {
+        lowEffortMatches.push(pattern);
+        score -= 0.3;
+        reasons.push(`Low-effort pattern matched: ${pattern}`);
+      }
+    } catch {
+      // Skip invalid regex patterns.
+    }
+  }
+
+  // For quote posts, check minimum commentary.
+  if (quotePost && config.minQuoteCommentaryChars > 0) {
+    if (meaningfulChars < config.minQuoteCommentaryChars) {
+      score -= 0.3;
+      reasons.push(
+        `Quote post has too little commentary: ${meaningfulChars} chars (min: ${config.minQuoteCommentaryChars})`,
+      );
+    }
+  }
+
+  score = Math.max(0, Math.min(1, score));
+
+  const isEngagementLikely = score >= 0.5;
+
+  if (isEngagementLikely && reasons.length === 0) {
+    reasons.push('Post appears substantial');
+  }
+
+  return {
+    isEngagementLikely,
+    score,
+    reasons,
+    signals: {
+      meaningfulChars,
+      wordCount,
+      lowEffortMatches,
+      isQuotePost: quotePost,
+    },
+  };
+}
+
+// ---------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------
+
+/**
+ * Normalize a BCP 47 language tag to its base language code.
+ * e.g. "de-DE" -> "de", "en-US" -> "en", "pt-BR" -> "pt"
+ */
+function normalizeLanguageTag(tag: string): string {
+  return tag.split('-')[0].toLowerCase();
+}
+
+/**
+ * Count "meaningful" characters — letters and digits, stripping
+ * whitespace, punctuation, and common emoji sequences.
+ */
+function countMeaningfulChars(text: string): number {
+  const stripped = text.replace(/[\s\p{P}\p{S}]/gu, '');
+  return stripped.length;
+}
+
+/**
+ * Count words in a text string.
+ */
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return 0;
+  return trimmed.split(/\s+/).length;
+}
 
 /**
  * Count different types of facet features in a post.

@@ -19,6 +19,8 @@ import {
 import {
   evaluateSpamLikelihood,
   evaluateSafety,
+  evaluateLanguage,
+  evaluateEngagement,
   isReply,
   isQuotePost,
 } from './contentFilters.js';
@@ -28,11 +30,13 @@ import {
  *
  * Applies all filter stages in order:
  * 1. Event-level: Check if post type is acceptable (not a reply, etc.)
- * 2. Membership: Check if author is on target domain (eurosky.social)
- * 3. Newcomer: Check if author is new on target domain
- * 4. Human: Check if author appears human-operated
- * 5. Spam: Check post content for spam patterns
- * 6. Safety: Check post content for safety violations
+ * 2. Language: Check if post languages match allowed languages
+ * 3. Membership: Check if author is on target domain (eurosky.social)
+ * 4. Newcomer: Check if author is new on target domain
+ * 5. Human: Check if author appears human-operated
+ * 6. Engagement: Check if post is substantial enough
+ * 7. Spam: Check post content for spam patterns
+ * 8. Safety: Check post content for safety violations
  *
  * Hard blockers cause immediate rejection. Soft signals contribute to scoring.
  */
@@ -59,7 +63,20 @@ export function evaluateCandidatePost(
   }
 
   // ---------------------------------------------------------
-  // Stage 1: Membership check
+  // Stage 1: Language check
+  // ---------------------------------------------------------
+
+  const language = evaluateLanguage(post, config);
+
+  if (!language.isAllowed) {
+    hardBlockers.push('Post language not allowed');
+    reasonsRejected.push(...language.reasons);
+  } else {
+    reasonsAccepted.push(...language.reasons);
+  }
+
+  // ---------------------------------------------------------
+  // Stage 2: Membership check
   // ---------------------------------------------------------
 
   const membership = isEuroskyAccount(profile, config);
@@ -72,7 +89,7 @@ export function evaluateCandidatePost(
   }
 
   // ---------------------------------------------------------
-  // Stage 2: Newcomer check
+  // Stage 3: Newcomer check
   // ---------------------------------------------------------
 
   const newcomer = isNewOnEurosky(profile, config, now);
@@ -85,7 +102,7 @@ export function evaluateCandidatePost(
   }
 
   // ---------------------------------------------------------
-  // Stage 3: Human check
+  // Stage 4: Human check
   // ---------------------------------------------------------
 
   const human = evaluateHumanLikelihood(profile, config);
@@ -98,7 +115,20 @@ export function evaluateCandidatePost(
   }
 
   // ---------------------------------------------------------
-  // Stage 4: Spam check
+  // Stage 5: Engagement check
+  // ---------------------------------------------------------
+
+  const engagement = evaluateEngagement(post, config);
+
+  if (!engagement.isEngagementLikely) {
+    hardBlockers.push('Post appears low-effort');
+    reasonsRejected.push(...engagement.reasons);
+  } else {
+    reasonsAccepted.push(...engagement.reasons);
+  }
+
+  // ---------------------------------------------------------
+  // Stage 6: Spam check
   // ---------------------------------------------------------
 
   const spam = evaluateSpamLikelihood(post, config);
@@ -111,7 +141,7 @@ export function evaluateCandidatePost(
   }
 
   // ---------------------------------------------------------
-  // Stage 5: Safety check
+  // Stage 7: Safety check
   // ---------------------------------------------------------
 
   const safety = evaluateSafety(post, config);
@@ -138,7 +168,7 @@ export function evaluateCandidatePost(
 
   // Calculate score for ranking (only meaningful if accepted).
   const score = accepted
-    ? calculateScore(human.score, spam.score, safety.score, human.signals.profileCompleteness)
+    ? calculateScore(human.score, spam.score, safety.score, engagement.score, human.signals.profileCompleteness)
     : 0;
 
   return {
@@ -149,9 +179,11 @@ export function evaluateCandidatePost(
     reasonsRejected,
     hardBlockers,
     stageResults: {
+      language,
       membership,
       newcomer,
       human,
+      engagement,
       spam,
       safety,
     },
@@ -200,17 +232,17 @@ function calculateScore(
   humanScore: number,
   spamScore: number,
   safetyScore: number,
+  engagementScore: number,
   profileCompleteness: number,
 ): number {
-  // Weights for different signals.
   const weights = {
-    human: 0.4,
-    antiSpam: 0.3,
-    safety: 0.2,
+    human: 0.3,
+    antiSpam: 0.2,
+    safety: 0.15,
+    engagement: 0.25,
     profile: 0.1,
   };
 
-  // Invert spam and safety scores (lower is better for those).
   const antiSpamScore = 1 - spamScore;
   const safetyGoodScore = 1 - safetyScore;
 
@@ -218,9 +250,9 @@ function calculateScore(
     weights.human * humanScore +
     weights.antiSpam * antiSpamScore +
     weights.safety * safetyGoodScore +
+    weights.engagement * engagementScore +
     weights.profile * profileCompleteness;
 
-  // Clamp to [0, 1].
   return Math.max(0, Math.min(1, score));
 }
 
@@ -231,6 +263,12 @@ export function createRejectedEvaluation(
   reason: string,
   profile?: ProfileView,
 ): CandidateEvaluation {
+  const emptyLanguage = {
+    isAllowed: true,
+    reasons: [reason],
+    signals: { postLanguages: [] as string[], normalizedLanguages: [] as string[], matchedLanguages: [] as string[] },
+  };
+
   const emptyMembership = {
     isMember: false,
     confidence: 'low' as Confidence,
@@ -251,6 +289,13 @@ export function createRejectedEvaluation(
     score: 0,
     reasons: [reason],
     signals: { botLabels: [], botKeywords: [], profileCompleteness: 0 },
+  };
+
+  const emptyEngagement = {
+    isEngagementLikely: true,
+    score: 0,
+    reasons: [reason],
+    signals: { meaningfulChars: 0, wordCount: 0, lowEffortMatches: [] as string[], isQuotePost: false },
   };
 
   const emptySpam = {
@@ -275,9 +320,11 @@ export function createRejectedEvaluation(
     reasonsRejected: [reason],
     hardBlockers: [reason],
     stageResults: {
+      language: emptyLanguage,
       membership: emptyMembership,
       newcomer: emptyNewcomer,
       human: emptyHuman,
+      engagement: emptyEngagement,
       spam: emptySpam,
       safety: emptySafety,
     },

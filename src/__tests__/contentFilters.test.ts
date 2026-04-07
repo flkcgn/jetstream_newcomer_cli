@@ -6,11 +6,15 @@ import assert from 'node:assert';
 import {
   evaluateSpamLikelihood,
   evaluateSafety,
+  evaluateLanguage,
+  evaluateEngagement,
   isReply,
   isQuotePost,
 } from '../contentFilters.js';
 
-import type { AppBskyFeedPostRecord, Facet } from '../type.js';
+import { defaultEvaluationConfig } from '../filters.js';
+
+import type { AppBskyFeedPostRecord, EvaluationConfig, Facet } from '../type.js';
 
 // ---------------------------------------------------------
 // Test helpers
@@ -211,5 +215,154 @@ describe('isQuotePost', () => {
     });
 
     assert.strictEqual(isQuotePost(post), false);
+  });
+});
+
+// ---------------------------------------------------------
+// evaluateLanguage tests
+// ---------------------------------------------------------
+
+describe('evaluateLanguage', () => {
+  it('should allow any language when no restrictions configured', () => {
+    const post = createPost({ langs: ['de', 'en'] });
+    const result = evaluateLanguage(post);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.ok(result.reasons.some(r => r.includes('No language restrictions')));
+  });
+
+  it('should allow matching languages', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['de', 'en'],
+    };
+    const post = createPost({ langs: ['de'] });
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.deepStrictEqual(result.signals.matchedLanguages, ['de']);
+  });
+
+  it('should reject non-matching languages', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['de', 'en'],
+    };
+    const post = createPost({ langs: ['ja'] });
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, false);
+    assert.ok(result.reasons.some(r => r.includes('do not match')));
+  });
+
+  it('should normalize language tags (de-DE -> de)', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['de'],
+    };
+    const post = createPost({ langs: ['de-DE'] });
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.deepStrictEqual(result.signals.normalizedLanguages, ['de']);
+  });
+
+  it('should allow posts without language tags when not required', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['de'],
+      requireLanguageTag: false,
+    };
+    const post = createPost();
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, true);
+  });
+
+  it('should reject posts without language tags when required', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      allowedLanguages: ['de'],
+      requireLanguageTag: true,
+    };
+    const post = createPost();
+    const result = evaluateLanguage(post, config);
+
+    assert.strictEqual(result.isAllowed, false);
+    assert.ok(result.reasons.some(r => r.includes('no language tags')));
+  });
+});
+
+// ---------------------------------------------------------
+// evaluateEngagement tests
+// ---------------------------------------------------------
+
+describe('evaluateEngagement', () => {
+  it('should accept substantial post', () => {
+    const post = createPost({
+      text: 'Hello everyone! I just joined eurosky and I am very excited to be here.',
+    });
+    const result = evaluateEngagement(post);
+
+    assert.strictEqual(result.isEngagementLikely, true);
+    assert.ok(result.score >= 0.5);
+  });
+
+  it('should reject extremely short posts', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      minMeaningfulTextChars: 10,
+    };
+    const post = createPost({ text: 'hi' });
+    const result = evaluateEngagement(post, config);
+
+    assert.strictEqual(result.isEngagementLikely, false);
+    assert.ok(result.reasons.some(r => r.includes('Too few meaningful characters')));
+  });
+
+  it('should detect low-effort patterns', () => {
+    const post = createPost({ text: 'lol' });
+    const result = evaluateEngagement(post);
+
+    assert.ok(result.signals.lowEffortMatches.length > 0);
+    assert.ok(result.score < 1.0);
+  });
+
+  it('should track quote post status', () => {
+    const post = createPost({
+      text: 'Interesting perspective',
+      embed: {
+        $type: 'app.bsky.embed.record',
+        record: { uri: 'at://did:plc:123/post/abc', cid: 'cid123' },
+      },
+    });
+    const result = evaluateEngagement(post);
+
+    assert.strictEqual(result.signals.isQuotePost, true);
+  });
+
+  it('should reject quote post with too little commentary', () => {
+    const config: EvaluationConfig = {
+      ...defaultEvaluationConfig,
+      minQuoteCommentaryChars: 20,
+    };
+    const post = createPost({
+      text: 'wow',
+      embed: {
+        $type: 'app.bsky.embed.record',
+        record: { uri: 'at://did:plc:123/post/abc', cid: 'cid123' },
+      },
+    });
+    const result = evaluateEngagement(post, config);
+
+    assert.ok(result.reasons.some(r => r.includes('Quote post has too little commentary')));
+  });
+
+  it('should count meaningful characters correctly', () => {
+    const post = createPost({ text: 'Hello World! 123' });
+    const result = evaluateEngagement(post);
+
+    assert.ok(result.signals.meaningfulChars > 0);
+    assert.ok(result.signals.wordCount >= 2);
   });
 });

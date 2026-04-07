@@ -58,9 +58,34 @@ export const defaultEvaluationConfig: EvaluationConfig = {
   maxLinksBeforeSpam: 3,
   maxHashtagsBeforeSpam: 5,
 
-  safetyBlocklist: [
-    // Intentionally minimal starter list. Extend as needed.
-    // Patterns are matched case-insensitively against normalized text.
+  safetyBlocklist: [],
+
+  allowDids: [],
+  allowHandles: [],
+  blockDids: [],
+  blockHandles: [],
+
+  allowedLanguages: [],
+  requireLanguageTag: false,
+
+  minMeaningfulTextChars: 3,
+  minWordCount: 1,
+  minQuoteCommentaryChars: 0,
+  lowEffortPatterns: [
+    '^\\.$',
+    '^\\.{2,}$',
+    '^\\?+$',
+    '^!+$',
+    '^lol$',
+    '^lmao$',
+    '^same$',
+    '^this$',
+    '^mood$',
+    '^fr$',
+    '^real$',
+    '^facts$',
+    '^💀$',
+    '^😂$',
   ],
 
   includeReplies: false,

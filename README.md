@@ -68,9 +68,11 @@ The evaluation pipeline applies these stages in order:
 
 | Stage | What It Checks | Hard Blocker? |
 |-------|---------------|---------------|
+| **Language** | Post language tags match allowed languages | Yes |
 | **Membership** | Handle ends with target domain | Yes |
 | **Newcomer** | Account age ≤ threshold | Yes |
 | **Human** | No bot labels/keywords, not a bridge account | Yes |
+| **Engagement** | Post is substantial (not low-effort) | Yes |
 | **Spam** | Link count, hashtags, promotional patterns | Yes |
 | **Safety** | Hate speech, harassment patterns | Yes |
 
@@ -153,7 +155,7 @@ src/
 ├── profileCache.ts    # In-memory profile cache with TTL
 ├── type.ts            # Domain types and result interfaces
 ├── filters.ts         # Membership, newcomer, human filters
-├── contentFilters.ts  # Spam and safety filters
+├── contentFilters.ts  # Spam, safety, language, and engagement filters
 ├── evaluate.ts        # Central evaluation combining all stages
 └── output.ts          # CLI output formatting
 ```

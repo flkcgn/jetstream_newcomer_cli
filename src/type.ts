@@ -206,6 +206,30 @@ export interface SafetyResult {
     matchedRules: string[];
 }
 
+// Result of language suitability checks.
+export interface LanguageResult {
+    isAllowed: boolean;
+    reasons: string[];
+    signals: {
+        postLanguages: string[];
+        normalizedLanguages: string[];
+        matchedLanguages: string[];
+    };
+}
+
+// Result of checking if the post is substantial and engagement-oriented.
+export interface EngagementResult {
+    isEngagementLikely: boolean;
+    score: number; // 0.0 = low effort, 1.0 = substantial
+    reasons: string[];
+    signals: {
+        meaningfulChars: number;
+        wordCount: number;
+        lowEffortMatches: string[];
+        isQuotePost: boolean;
+    };
+}
+
 // Combined evaluation of a candidate post for the feed.
 export interface CandidateEvaluation {
     accepted: boolean;
@@ -215,9 +239,11 @@ export interface CandidateEvaluation {
     reasonsRejected: string[];
     hardBlockers: string[];
     stageResults: {
+        language: LanguageResult;
         membership: MembershipResult;
         newcomer: NewcomerResult;
         human: HumanResult;
+        engagement: EngagementResult;
         spam: SpamResult;
         safety: SafetyResult;
     };
@@ -262,6 +288,30 @@ export interface EvaluationConfig {
 
     // Safety blocklist patterns.
     safetyBlocklist: string[];
+
+    // Optional manual moderation controls.
+    allowDids: string[];
+    allowHandles: string[];
+    blockDids: string[];
+    blockHandles: string[];
+
+    // Allowed post languages (ISO codes, lowercase).
+    allowedLanguages: string[];
+
+    // Whether posts must provide language tags.
+    requireLanguageTag: boolean;
+
+    // Minimum meaningful character count for post text.
+    minMeaningfulTextChars: number;
+
+    // Minimum word count for post text.
+    minWordCount: number;
+
+    // Minimum meaningful characters required on quote posts.
+    minQuoteCommentaryChars: number;
+
+    // Patterns that indicate very low-effort posts.
+    lowEffortPatterns: string[];
 
     // Whether to include replies in the output.
     includeReplies: boolean;
