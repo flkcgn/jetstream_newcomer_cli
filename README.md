@@ -1,18 +1,18 @@
-# Eurosky Newcomer CLI
+# Eurosky Newcomer Feed Generator
 
-A CLI tool that consumes the Bluesky Jetstream feed and identifies posts from newcomers on [eurosky.social](https://eurosky.social).
+A Bluesky custom feed generator that surfaces posts from newcomers on [eurosky.social](https://eurosky.social). Includes both a CLI debugging tool and a production-ready feed server.
 
-## What This Tool Does
+## What This Does
 
-This tool connects to the Bluesky Jetstream and filters posts from accounts that:
+This project runs a Bluesky custom feed generator that:
 
-1. **Are on eurosky.social** – Handle ends with `.eurosky.social`
-2. **Are newcomers** – Account created within the last 7 days (configurable)
-3. **Appear human** – No bot labels, no bot keywords in profile
-4. **Are not spam** – No excessive links, hashtags, or promotional patterns
-5. **Pass safety checks** – No obvious hate speech or harassment
+1. **Connects to the Jetstream** firehose and receives all `app.bsky.feed.post` events in real-time
+2. **Filters posts** from accounts on eurosky.social that are new (≤ 7 days), human, and not spam
+3. **Indexes accepted posts** into a SQLite database with scoring
+4. **Serves the feed** via standard AT Protocol XRPC endpoints (`getFeedSkeleton`, `describeFeedGenerator`)
+5. **Provides a DID document** at `/.well-known/did.json` for `did:web` resolution
 
-The goal is to surface "Welcome Newcomers" candidates for a future custom feed.
+Users can subscribe to this feed in the Bluesky app to discover newcomers on eurosky.social.
 
 ## Requirements
 
@@ -21,50 +21,81 @@ The goal is to surface "Welcome Newcomers" candidates for a future custom feed.
 
 ## Quick Start
 
+### Feed Generator Server
+
 ```bash
-git clone https://github.com/flkcgn/jetstream_newcomer_cli.git
-cd jetstream_newcomer_cli
 npm install
 npm run build
-npm run dev
+
+# Configure (see Environment Variables below)
+export FEEDGEN_HOSTNAME=feed.example.com
+export FEEDGEN_PUBLISHER_DID=did:plc:your-did-here
+
+# Run the feed server
+npm run start:server
 ```
 
-Or with arguments:
+### CLI Debugging Tool
+
+The original CLI tool is still available for debugging and testing the filter pipeline:
 
 ```bash
 npm run dev -- --host eurosky.social --max-age-days 7 --debug
 ```
 
-## CLI Options
+## Environment Variables
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--host <domain>` | Target PDS domain to filter | `eurosky.social` |
-| `--max-age-days <n>` | Max account age in days | `7` |
-| `--debug`, `-d` | Show debug information | `false` |
-| `--include-rejected`, `-r` | Show rejected posts (for debugging) | `false` |
-| `--no-color` | Disable colored output | `false` |
-| `--help`, `-h` | Show help | |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FEEDGEN_HOSTNAME` | Public hostname of the feed generator | `localhost` |
+| `FEEDGEN_PORT` | HTTP server port | `3000` |
+| `FEEDGEN_LISTEN_HOST` | Bind address | `0.0.0.0` |
+| `FEEDGEN_SERVICE_DID` | DID for the feed generator service | `did:web:<hostname>` |
+| `FEEDGEN_PUBLISHER_DID` | DID of the Bluesky account publishing the feed | *(required)* |
+| `FEEDGEN_FEED_RECORD_NAME` | Short name used in the feed URI | `eurosky-newcomers` |
+| `FEEDGEN_FEED_DISPLAY_NAME` | Display name shown to users | `Welcome Newcomers (eurosky.social)` |
+| `FEEDGEN_FEED_DESCRIPTION` | Description shown to users | Posts from newcomers... |
+| `FEEDGEN_SQLITE_PATH` | Path to SQLite database file | `feed.db` |
+| `FEEDGEN_MAX_POST_AGE_HOURS` | Max age of indexed posts before garbage collection | `48` |
+| `FEEDGEN_GC_INTERVAL_MINUTES` | How often to run garbage collection | `30` |
+| `FEEDGEN_DEBUG` | Enable debug logging in server mode | `false` |
 
-## What "New on eurosky.social" Means
+## Publishing the Feed
 
-A **newcomer** is defined as an account that:
+To register the feed on the Bluesky network so users can discover and subscribe:
 
-- Has a handle ending in `.eurosky.social` (e.g., `alice.eurosky.social`)
-- Was **created** within the configured timeframe (default: 7 days)
+```bash
+export BLUESKY_HANDLE=your-handle.bsky.social
+export BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+export FEEDGEN_HOSTNAME=feed.example.com
+export FEEDGEN_PUBLISHER_DID=did:plc:your-did-here
 
-### Important Limitations
+npm run publish-feed
+```
 
-**ATProto does not expose PDS migration history.** This means:
+To remove the feed registration:
 
-- ✅ Accounts **created directly on eurosky.social** are detected correctly
-- ⚠️ Accounts that **migrated from another PDS** appear with their original global creation date, so recent migrants may be incorrectly classified as "not new"
+```bash
+npm run unpublish-feed
+```
 
-This is a fundamental limitation of the data available from the Bluesky AppView API. The tool uses a **conservative approach**: it prefers missing some newcomers over incorrectly labeling established accounts as new.
+## XRPC Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Health check with feed metadata and post count |
+| `GET /.well-known/did.json` | DID document for `did:web` resolution |
+| `GET /xrpc/app.bsky.feed.describeFeedGenerator` | Feed generator description |
+| `GET /xrpc/app.bsky.feed.getFeedSkeleton?feed=<at-uri>` | Feed skeleton with cursor pagination |
+
+## Feed Content Policy
+
+- **Normal posts** from newcomers are included
+- **Quote posts** are included only if they contain own commentary (≥ 10 characters)
+- **Replies** are excluded
+- **Languages**: `en`, `de`, `fr`, `es`, `it`, `nl`
 
 ## Filter Pipeline
-
-The evaluation pipeline applies these stages in order:
 
 | Stage | What It Checks | Hard Blocker? |
 |-------|---------------|---------------|
@@ -76,59 +107,16 @@ The evaluation pipeline applies these stages in order:
 | **Spam** | Link count, hashtags, promotional patterns | Yes |
 | **Safety** | Hate speech, harassment patterns | Yes |
 
-Each stage produces a **structured result** with:
-- Boolean decision
-- Confidence level (`high`, `medium`, `low`)
-- Reasons explaining the decision
-- Signals used for the decision
+## CLI Options (Debug Tool)
 
-## Heuristics and Approximations
-
-All filters are **best-effort heuristics**. They are designed to:
-
-- ✅ Prefer **false negatives** over **false positives**
-- ✅ Be **conservative** when uncertain
-- ✅ Provide **explainable decisions** via reasons/signals
-- ✅ Support **future ranking** via scores
-
-### Bot Detection
-
-Checks for:
-- Self-declared bot labels (`bot`, `automation`)
-- Bot keywords in handle/display name/description
-- Bridge account patterns (e.g., `*.ap.brid.gy`)
-- Profile completeness as a soft signal
-
-### Spam Detection
-
-Checks for:
-- Excessive links (> 3)
-- Excessive hashtags (> 5)
-- Excessive mentions (> 10)
-- Promotional patterns ("giveaway", "airdrop", "click here", etc.)
-- Crypto/NFT patterns (`$TOKEN`, Ethereum addresses)
-- High uppercase ratio in longer texts
-
-### Safety Filter
-
-Checks for:
-- Configurable blocklist patterns
-- Post self-labels (nsfw, gore, violence)
-- Basic threat/harassment patterns
-
-The safety filter is intentionally minimal and rule-based. For production use, consider integrating with external moderation APIs.
-
-## Output Format
-
-Accepted posts show:
-- Timestamp
-- Handle and display name
-- DID
-- Truncated post text
-- Key signals (account age, human score, spam score)
-- Overall score and confidence
-
-With `--debug`, additional information is shown including cursor values and detailed reasons.
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host <domain>` | Target PDS domain to filter | `eurosky.social` |
+| `--max-age-days <n>` | Max account age in days | `7` |
+| `--debug`, `-d` | Show debug information | `false` |
+| `--include-rejected`, `-r` | Show rejected posts (for debugging) | `false` |
+| `--no-color` | Disable colored output | `false` |
+| `--help`, `-h` | Show help | |
 
 ## Development
 
@@ -142,27 +130,62 @@ npm run build
 # Run tests
 npm test
 
-# Run in development
+# Run CLI in development
 npm run dev
+
+# Run feed server in development
+npm run dev:server
 ```
 
 ## Architecture
 
 ```
 src/
-├── index.ts           # CLI entry point with argument parsing
+├── index.ts           # CLI entry point (debug tool)
+├── server.ts          # Feed generator server entry point
+├── config.ts          # Environment-based configuration
+├── database.ts        # SQLite storage for feed index
+├── feedGenerator.ts   # HTTP server with XRPC endpoints
 ├── jetstreamClient.ts # Jetstream connection and event handling
 ├── profileCache.ts    # In-memory profile cache with TTL
 ├── type.ts            # Domain types and result interfaces
 ├── filters.ts         # Membership, newcomer, human filters
 ├── contentFilters.ts  # Spam, safety, language, and engagement filters
 ├── evaluate.ts        # Central evaluation combining all stages
-└── output.ts          # CLI output formatting
+├── output.ts          # CLI output formatting
+├── publishFeed.ts     # Feed registration script
+└── unpublishFeed.ts   # Feed unregistration script
 ```
 
-## Future Work
+## Hosting
 
-This CLI is designed as the foundation for a **custom "Welcome Newcomers" feed**. The structured evaluation results (confidence levels, scores, signals) are preserved to support future ranking and feed generation.
+The feed generator is designed to be hosted on a VM with a public hostname. Requirements:
+
+1. A domain name pointing to the server (for `did:web` resolution)
+2. TLS termination (e.g., via nginx or Caddy reverse proxy)
+3. Node.js ≥ 20 runtime
+4. A Bluesky account to publish the feed record
+
+### Example with systemd
+
+```ini
+[Unit]
+Description=Eurosky Newcomer Feed Generator
+After=network.target
+
+[Service]
+Type=simple
+User=feedgen
+WorkingDirectory=/opt/eurosky-feed
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+Environment=FEEDGEN_HOSTNAME=feed.example.com
+Environment=FEEDGEN_PUBLISHER_DID=did:plc:your-did
+Environment=FEEDGEN_PORT=3000
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## License
 
