@@ -28,3 +28,6 @@ coverage/
 *.swp
 *~
 .DS_Store
+
+# Private documentation / handover notes (must not be public)
+private-docs/
