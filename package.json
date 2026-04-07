@@ -12,7 +12,8 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test src/__tests__/*.test.ts"
+    "test": "node --import tsx --test src/__tests__/*.test.ts",
+    "lint": "eslint src/"
   },
   "description": "A simple CLI tool to consume the Bluesky / AT Protocol **Jetstream** feed and analyze **new accounts** on Bluesky.",
   "repository": {

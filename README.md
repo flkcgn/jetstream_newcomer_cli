@@ -160,6 +160,56 @@ src/
 └── output.ts          # CLI output formatting
 ```
 
+## Deployment (VM / Docker)
+
+### Docker
+
+```bash
+# Build image
+docker build -t jetstream-newcomer .
+
+# Run
+docker run --rm jetstream-newcomer --host eurosky.social --max-age-days 7
+```
+
+### Systemd (VM)
+
+```bash
+# Copy the service file
+sudo cp deploy/jetstream-newcomer.service /etc/systemd/system/
+
+# Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable --now jetstream-newcomer
+
+# Check logs
+journalctl -u jetstream-newcomer -f
+```
+
+### Direct Node.js
+
+```bash
+npm ci && npm run build
+node dist/index.js --host eurosky.social --max-age-days 7
+```
+
+## Manual Moderation
+
+The evaluation pipeline supports allowlists and blocklists by DID and handle.
+These can be configured in the `EvaluationConfig`:
+
+```typescript
+{
+  allowDids: ['did:plc:trusted-user'],
+  allowHandles: ['friend.eurosky.social'],
+  blockDids: ['did:plc:known-spammer'],
+  blockHandles: ['spammer.eurosky.social'],
+}
+```
+
+- **Allowlisted** accounts bypass all filters and are always accepted.
+- **Blocklisted** accounts are immediately rejected before any evaluation.
+
 ## Future Work
 
 This CLI is designed as the foundation for a **custom "Welcome Newcomers" feed**. The structured evaluation results (confidence levels, scores, signals) are preserved to support future ranking and feed generation.
