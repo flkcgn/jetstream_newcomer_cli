@@ -109,7 +109,6 @@ export async function startJetstreamPostListener(
   ));
 
   // Reconnection loop.
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const jetstream = new Jetstream({
       wantedCollections,

@@ -65,12 +65,12 @@ export const defaultEvaluationConfig: EvaluationConfig = {
   blockDids: [],
   blockHandles: [],
 
-  allowedLanguages: [],
+  allowedLanguages: ['en', 'de', 'fr', 'es', 'it', 'bnl'],
   requireLanguageTag: false,
 
   minMeaningfulTextChars: 3,
   minWordCount: 1,
-  minQuoteCommentaryChars: 0,
+  minQuoteCommentaryChars: 15,
   lowEffortPatterns: [
     '^\\.$',
     '^\\.{2,}$',

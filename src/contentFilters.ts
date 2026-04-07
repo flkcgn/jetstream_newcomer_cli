@@ -275,7 +275,7 @@ export function evaluateLanguage(
     };
   }
 
-  const allowedSet = new Set(config.allowedLanguages.map(l => l.toLowerCase()));
+  const allowedSet = new Set(config.allowedLanguages.map(l => normalizeLanguageTag(l)));
   const matchedLanguages = normalizedLanguages.filter(l => allowedSet.has(l));
 
   const isAllowed = matchedLanguages.length > 0;
@@ -391,11 +391,21 @@ export function evaluateEngagement(
 // ---------------------------------------------------------
 
 /**
- * Normalize a BCP 47 language tag to its base language code.
- * e.g. "de-DE" -> "de", "en-US" -> "en", "pt-BR" -> "pt"
+ * Mapping of non-standard language codes to their canonical forms.
+ * "bnl" is a Benelux shorthand used in the community; posts tagged
+ * as "bnl" should match the "nl" language, and vice versa.
+ */
+const languageAliases: Record<string, string> = {
+  bnl: 'nl',
+};
+
+/**
+ * Normalize a BCP 47 language tag to its base language code,
+ * applying community-specific aliases (e.g. "bnl" -> "nl").
  */
 function normalizeLanguageTag(tag: string): string {
-  return tag.split('-')[0].toLowerCase();
+  const base = tag.split('-')[0].toLowerCase();
+  return languageAliases[base] ?? base;
 }
 
 /**
