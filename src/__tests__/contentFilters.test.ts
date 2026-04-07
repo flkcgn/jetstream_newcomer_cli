@@ -223,12 +223,20 @@ describe('isQuotePost', () => {
 // ---------------------------------------------------------
 
 describe('evaluateLanguage', () => {
+  it('should allow matching languages with default config', () => {
+    const post = createPost({ langs: ['de', 'en'] });
+    const result = evaluateLanguage(post);
+
+    assert.strictEqual(result.isAllowed, true);
+    assert.ok(result.signals.matchedLanguages.length > 0);
+  });
+
   it('should allow any language when no restrictions configured', () => {
     const config: EvaluationConfig = {
       ...defaultEvaluationConfig,
       allowedLanguages: [],
     };
-    const post = createPost({ langs: ['de', 'en'] });
+    const post = createPost({ langs: ['zh', 'ja'] });
     const result = evaluateLanguage(post, config);
 
     assert.strictEqual(result.isAllowed, true);

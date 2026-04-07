@@ -1,20 +1,24 @@
 # Agent Collaboration Guide
 
-This repository uses a **private local documentation workflow** so all agents can
-share context without publishing sensitive operational notes.
+This repository uses a **two-tier documentation workflow**:
+- `docs/` — public documentation, committed to the repository.
+- `private-docs/` — private operational notes, never committed.
 
-## 1) Private docs location (non-public)
+## 1) Public documentation (`docs/`)
+
+- Use: `docs/`
+- Purpose: setup guides, architecture docs, content policy, hosting guides.
+- Rule: anything under `docs/` is public and **must be committed**.
+- Must NOT contain: secrets, credentials, .env contents, API keys, passwords, personal data.
+- `README.md` in the repo root is also public and committed.
+
+## 2) Private docs location (non-public)
 
 - Use: `private-docs/`
-- Purpose: handovers, hosting notes, tuning notes, internal runbooks.
-- Rule: anything under `private-docs/` must stay local and must not be committed.
+- Purpose: handovers, secrets references, tuning notes, internal runbooks, operational notes.
+- Rule: anything under `private-docs/` must stay local and must **not** be committed.
 - Enforcement: `.gitignore` contains `private-docs/`.
-
-## 2) Public docs rule
-
-- `README.md` may be public and committed.
-- All additional markdown documentation should be written in `private-docs/`.
-- Do not add new public markdown docs unless explicitly requested.
+- Must contain: agent handover notes, environment-specific configuration details, credentials references.
 
 ## 3) Mandatory agent handover behavior
 

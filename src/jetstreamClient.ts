@@ -38,6 +38,13 @@ export interface JetstreamClientOptions {
   debug?: boolean;
   includeRejected?: boolean;
   useColors?: boolean;
+
+  // Callback invoked when a post is accepted by the evaluation pipeline.
+  // Used by the feed generator to index posts into the database.
+  onPostAccepted?: (event: AppBskyFeedPostCommitEvent, evaluation: import('./type.js').CandidateEvaluation) => void;
+
+  // Callback invoked when a post is deleted (to remove from feed index).
+  onPostDeleted?: (did: string, rkey: string) => void;
 }
 
 // ---------------------------------------------------------
@@ -82,6 +89,8 @@ export async function startJetstreamPostListener(
     debug = false,
     includeRejected = false,
     useColors = true,
+    onPostAccepted,
+    onPostDeleted,
   } = options;
 
   // Merge evaluation config with defaults.
@@ -132,6 +141,18 @@ export async function startJetstreamPostListener(
     jetstream.on('commit', (rawEvent: unknown) => {
       const event = rawEvent as JetstreamEvent;
 
+      // Handle post deletions for feed index cleanup.
+      if (onPostDeleted && event.kind === 'commit') {
+        const commit = (event as AppBskyFeedPostCommitEvent).commit;
+        if (
+          commit?.collection === 'app.bsky.feed.post' &&
+          commit.operation === 'delete'
+        ) {
+          onPostDeleted(event.did, commit.rkey);
+          return;
+        }
+      }
+
       if (!isPostCreateEvent(event)) return;
 
       void handlePostEvent(
@@ -140,6 +161,7 @@ export async function startJetstreamPostListener(
         evaluationConfig,
         outputOptions,
         includeRejected,
+        onPostAccepted,
       );
     });
 
@@ -171,6 +193,7 @@ async function handlePostEvent(
   config: EvaluationConfig,
   outputOptions: OutputOptions,
   includeRejected: boolean,
+  onPostAccepted?: (event: AppBskyFeedPostCommitEvent, evaluation: import('./type.js').CandidateEvaluation) => void,
 ): Promise<void> {
   const { did, time_us, commit } = event;
   const post = commit.record;
@@ -185,10 +208,10 @@ async function handlePostEvent(
     // Output based on result.
     if (evaluation.accepted) {
       console.log(formatAcceptedPost(post, profile, evaluation, time_us, outputOptions));
+      onPostAccepted?.(event, evaluation);
     } else if (includeRejected) {
       console.log(formatRejectedPost(post, profile, evaluation, time_us, outputOptions));
     }
-    // If rejected and not includeRejected, silently skip.
 
   } catch (error) {
     // Profile fetch failed - create rejection evaluation.
