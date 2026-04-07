@@ -61,3 +61,12 @@ Before each commit, verify private docs are not staged:
 3. Commit only intended tracked files
 
 If private docs accidentally get staged, unstage them immediately.
+
+## 6) Branch and PR governance (mandatory)
+
+- Agents must **not** merge directly into `main`.
+- Agents must **not** push direct feature changes to `main`.
+- For implementation work, agents must create and use a dedicated working branch.
+- At completion, agents must open/update a pull request.
+- A human review is required before merge approval.
+- Merge to `main` is allowed only after user/reviewer explicitly approves it.
