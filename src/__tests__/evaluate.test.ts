@@ -136,9 +136,11 @@ describe('evaluateCandidatePost', () => {
     const post = createPost();
     const result = evaluateCandidatePost(post, profile, defaultEvaluationConfig, now);
 
+    assert.ok(result.stageResults.language);
     assert.ok(result.stageResults.membership);
     assert.ok(result.stageResults.newcomer);
     assert.ok(result.stageResults.human);
+    assert.ok(result.stageResults.engagement);
     assert.ok(result.stageResults.spam);
     assert.ok(result.stageResults.safety);
   });

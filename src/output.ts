@@ -95,7 +95,7 @@ export function formatAcceptedPost(
   lines.push(`  ${c.cyan}Text:${c.reset} ${text}`);
 
   // Key signals.
-  const { newcomer, human, spam } = evaluation.stageResults;
+  const { newcomer, human, engagement, spam } = evaluation.stageResults;
   const ageDaysStr = newcomer.accountAgeDays !== null
     ? `${newcomer.accountAgeDays.toFixed(1)}d`
     : '?';
@@ -104,6 +104,7 @@ export function formatAcceptedPost(
     `  ${c.cyan}Signals:${c.reset} ` +
     `age=${ageDaysStr} ` +
     `human=${(human.score * 100).toFixed(0)}% ` +
+    `engagement=${(engagement.score * 100).toFixed(0)}% ` +
     `spam=${(spam.score * 100).toFixed(0)}%`
   );
 
@@ -158,11 +159,13 @@ export function formatRejectedPost(
     lines.push(`  ${c.gray}Cursor: ${eventTimeUs}${c.reset}`);
 
     // Show stage details.
-    const { membership, newcomer, human, spam, safety } = evaluation.stageResults;
+    const { language, membership, newcomer, human, engagement: eng, spam, safety } = evaluation.stageResults;
 
+    lines.push(`  ${c.gray}Language: ${language.isAllowed ? 'OK' : 'BLOCKED'} [${language.signals.normalizedLanguages.join(', ') || 'none'}]${c.reset}`);
     lines.push(`  ${c.gray}Membership: ${membership.isMember ? 'YES' : 'NO'} (${membership.confidence})${c.reset}`);
     lines.push(`  ${c.gray}Newcomer: ${newcomer.isNew ? 'YES' : 'NO'} (${newcomer.confidence})${c.reset}`);
     lines.push(`  ${c.gray}Human: ${human.isHumanLikely ? 'YES' : 'NO'} (score: ${(human.score * 100).toFixed(0)}%)${c.reset}`);
+    lines.push(`  ${c.gray}Engagement: ${eng.isEngagementLikely ? 'YES' : 'NO'} (score: ${(eng.score * 100).toFixed(0)}%)${c.reset}`);
     lines.push(`  ${c.gray}Spam: ${spam.isSpamLikely ? 'YES' : 'NO'} (score: ${(spam.score * 100).toFixed(0)}%)${c.reset}`);
     lines.push(`  ${c.gray}Safety: ${safety.isBlocked ? 'BLOCKED' : 'OK'} (score: ${(safety.score * 100).toFixed(0)}%)${c.reset}`);
   }
@@ -189,7 +192,7 @@ export function formatStartupMessage(
     `${c.gray}─────────────────────────────────────────${c.reset}\n` +
     `Target domain: ${c.cyan}${targetDomain}${c.reset}\n` +
     `Max account age: ${c.cyan}${maxAgeDays} days${c.reset}\n` +
-    `Filters: membership, newcomer, human, spam, safety\n` +
+    `Filters: language, membership, newcomer, human, engagement, spam, safety\n` +
     `${c.gray}─────────────────────────────────────────${c.reset}\n` +
     `${c.dim}Connecting to Bluesky Jetstream...${c.reset}`
   );
