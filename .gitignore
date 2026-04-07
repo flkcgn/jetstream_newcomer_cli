@@ -12,6 +12,11 @@ out/
 coverage/
 .nyc_output/
 
+# Database
+*.db
+*.db-wal
+*.db-shm
+
 # Logs
 *.log
 
